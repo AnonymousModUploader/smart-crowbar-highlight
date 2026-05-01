@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mod>
+    <hooks>
+        <post script_path="crowbar_highlight.lua" hook_id="lib/units/interactions/interactionext"/>
+        <post script_path="crowbar_highlight.lua" hook_id="lib/managers/playermanager"/>
+        <post script_path="menu.lua"              hook_id="lib/managers/menumanager"/>
+    </hooks>
+    <assets>
+        <file name="units/payday2/pickups/gen_pku_crowbar/gen_pku_crowbar.material_config" path="assets/gen_pku_crowbar.material_config" load="startup"/>
+    </assets>
+</mod>

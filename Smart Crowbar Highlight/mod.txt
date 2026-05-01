@@ -1,0 +1,19 @@
+{
+    "name": "Smart Crowbar Highlight",
+    "description": "Highlights all crowbars and unhighlight once uve picked up one.",
+    "author": "Anonymous",
+    "version": "1.2",
+    "blt_version": 2,
+    "supermod_definition": "supermod.xml",
+    "keybinds": [
+        {
+            "keybind_id": "crowbar_hl_toggle",
+	    "name": "Toggle Crowbar Highlights",
+            "description": "Toggle crowbar highlights on/off",
+            "script_path": "toggle_crowbar.lua",
+            "run_in_menu": false,
+            "run_in_game": true,
+            "localized": false
+        }
+    ]
+}
