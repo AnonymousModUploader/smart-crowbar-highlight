@@ -5,7 +5,10 @@ local menu_id = "crowbar_highlight_menu"
 -- SETTINGS --
 _G.CrowbarHL_Settings = _G.CrowbarHL_Settings or {
     r = 0.9, g = 0.3, b = 0.2,
-    enabled = true
+    enabled = true,
+    proximity = false,
+    proximity_range = 1500,
+    auto_unhighlight = true,
 }
 
 local function load_settings()
@@ -21,6 +24,17 @@ local function load_settings()
                 CrowbarHL_Settings.enabled = data.enabled
             else
                 CrowbarHL_Settings.enabled = true
+            end
+            if data.proximity ~= nil then
+                CrowbarHL_Settings.proximity = data.proximity
+            else
+                CrowbarHL_Settings.proximity = false
+            end
+            CrowbarHL_Settings.proximity_range = data.proximity_range or 1500
+            if data.auto_unhighlight ~= nil then
+                CrowbarHL_Settings.auto_unhighlight = data.auto_unhighlight
+            else
+                CrowbarHL_Settings.auto_unhighlight = true
             end
         end
     end
@@ -76,15 +90,16 @@ local function update_preview()
             CrowbarHL_Settings.b
         ))
     end
-    if CrowbarHighlight_Units then
-        for _, unit in ipairs(CrowbarHighlight_Units) do
-            if alive(unit) then
-                local color = Vector3(CrowbarHL_Settings.r, CrowbarHL_Settings.g, CrowbarHL_Settings.b)
-                local mat = unit:material(Idstring("mtr_crowbar"))
-                if mat then mat:set_variable(Idstring("contour_color"), color) end
-                local mat2 = unit:material(Idstring("mat_contour"))
-                if mat2 then mat2:set_variable(Idstring("contour_color"), color) end
-            end
+end
+
+local function update_live_colors()
+    local color = Vector3(CrowbarHL_Settings.r, CrowbarHL_Settings.g, CrowbarHL_Settings.b)
+    for _, keeper in ipairs(CrowbarHighlight_Keepers or {}) do
+        if alive(keeper.unit) and keeper.running then
+            local mat = keeper.unit:material(Idstring("mtr_crowbar"))
+            if mat then mat:set_variable(Idstring("contour_color"), color) end
+            local mat2 = keeper.unit:material(Idstring("mat_contour"))
+            if mat2 then mat2:set_variable(Idstring("contour_color"), color) end
         end
     end
 end
@@ -97,7 +112,7 @@ local function show_preview()
     preview_panel = root:panel({
         name = "crowbar_hl_preview",
         x = root:w() - 220,
-        y = root:h() / 2 - 20,
+        y = root:h() / 2 + 60,
         w = 200,
         h = 160,
         layer = 200,
@@ -167,116 +182,132 @@ local function hide_preview()
     end
 end
 
+local function sync_sliders(r, g, b)
+    pcall(function()
+        local node = MenuHelper:GetMenu(menu_id)
+        if node then
+            local ri = node:item("crowbar_hl_r")
+            local gi = node:item("crowbar_hl_g")
+            local bi = node:item("crowbar_hl_b")
+            if ri then ri:set_value(r) end
+            if gi then gi:set_value(g) end
+            if bi then bi:set_value(b) end
+        end
+    end)
+end
 
 -- CALLBACKS --
-    MenuCallbackHandler.crowbar_hl_enabled = function(self, item)
-        CrowbarHL_Settings.enabled = item:value() == "on"
-        save_settings()
-        if CrowbarHL_Settings.enabled then
-            CrowbarHighlight_Enabled = true
-            local has_crowbar = managers.player and managers.player:has_special_equipment("crowbar")
-            if not has_crowbar then
-                for i, unit in ipairs(CrowbarHighlight_Units or {}) do
-                    local keeper = CrowbarHighlight_Keepers[i]
-                    if alive(unit) and keeper and keeper.ext and keeper.ext._active then
-                        keeper.running = true
-                        keeper:run()
-                    end
-                end
-            end
+MenuCallbackHandler.crowbar_hl_enabled = function(self, item)
+    CrowbarHL_Settings.enabled = item:value() == "on"
+    save_settings()
+    if CrowbarHL_Settings.enabled then
+        CrowbarHighlight_Enabled = true
+        if CrowbarHL_Settings.auto_unhighlight
+            and managers.player and managers.player:has_special_equipment("crowbar") then
+            -- don't highlight, player is holding a crowbar
         else
-            for _, keeper in ipairs(CrowbarHighlight_Keepers or {}) do
-                keeper.running = false
-            end
-            for _, unit in ipairs(CrowbarHighlight_Units or {}) do
-                if alive(unit) then CrowbarHL_Unhighlight(unit) end
-            end
-        end
-    end
-
-    MenuCallbackHandler.crowbar_hl_r = function(self, item)
-        CrowbarHL_Settings.r = item:value()
-        save_settings()
-        update_preview()
-    end
-
-    MenuCallbackHandler.crowbar_hl_g = function(self, item)
-        CrowbarHL_Settings.g = item:value()
-        save_settings()
-        update_preview()
-    end
-
-    MenuCallbackHandler.crowbar_hl_b = function(self, item)
-        CrowbarHL_Settings.b = item:value()
-        save_settings()
-        update_preview()
-    end
-
-    MenuCallbackHandler.crowbar_hl_hex = function(self, item)
-        local r, g, b = hex_to_rgb(item:value())
-        if r then
-            CrowbarHL_Settings.r = r
-            CrowbarHL_Settings.g = g
-            CrowbarHL_Settings.b = b
-            save_settings()
-            update_preview()
-            pcall(function()
-                local node = MenuHelper:GetMenu(menu_id)
-                if node then
-                    local ri = node:item("crowbar_hl_r")
-                    local gi = node:item("crowbar_hl_g")
-                    local bi = node:item("crowbar_hl_b")
-                    if ri then ri:set_value(r) end
-                    if gi then gi:set_value(g) end
-                    if bi then bi:set_value(b) end
+            for i, unit in ipairs(CrowbarHighlight_Units or {}) do
+                local keeper = CrowbarHighlight_Keepers[i]
+                if alive(unit) and keeper and keeper.ext and keeper.ext._active then
+                    keeper.running = true
+                    keeper:run()
                 end
-            end)
+            end
+        end
+    else
+        for _, keeper in ipairs(CrowbarHighlight_Keepers or {}) do
+            keeper.running = false
+        end
+        for _, unit in ipairs(CrowbarHighlight_Units or {}) do
+            if alive(unit) then CrowbarHL_Unhighlight(unit) end
         end
     end
+end
 
-    MenuCallbackHandler.crowbar_hl_preset_mod = function(self, item)
-        CrowbarHL_Settings.r = 0.9
-        CrowbarHL_Settings.g = 0.3
-        CrowbarHL_Settings.b = 0.2
+MenuCallbackHandler.crowbar_hl_auto_unhighlight = function(self, item)
+    CrowbarHL_Settings.auto_unhighlight = item:value() == "on"
+    save_settings()
+    if CrowbarHL_Settings.auto_unhighlight then
+        if managers.player and managers.player:has_special_equipment("crowbar") then
+            CrowbarHL_SetHighlights(false)
+        end
+    else
+        CrowbarHL_SetHighlights(true)
+    end
+end
+
+MenuCallbackHandler.crowbar_hl_proximity = function(self, item)
+    CrowbarHL_Settings.proximity = item:value() == "on"
+    save_settings()
+    if not CrowbarHL_Settings.proximity then
+        CrowbarHL_SetHighlights(true)
+    end
+end
+
+MenuCallbackHandler.crowbar_hl_range = function(self, item)
+    CrowbarHL_Settings.proximity_range = item:value()
+    save_settings()
+end
+
+MenuCallbackHandler.crowbar_hl_r = function(self, item)
+    CrowbarHL_Settings.r = item:value()
+    save_settings()
+    update_preview()
+    update_live_colors()
+end
+
+MenuCallbackHandler.crowbar_hl_g = function(self, item)
+    CrowbarHL_Settings.g = item:value()
+    save_settings()
+    update_preview()
+    update_live_colors()
+end
+
+MenuCallbackHandler.crowbar_hl_b = function(self, item)
+    CrowbarHL_Settings.b = item:value()
+    save_settings()
+    update_preview()
+    update_live_colors()
+end
+
+MenuCallbackHandler.crowbar_hl_hex = function(self, item)
+    local r, g, b = hex_to_rgb(item:value())
+    if r then
+        CrowbarHL_Settings.r = r
+        CrowbarHL_Settings.g = g
+        CrowbarHL_Settings.b = b
         save_settings()
         update_preview()
-        pcall(function()
-            local node = MenuHelper:GetMenu(menu_id)
-            if node then
-                local ri = node:item("crowbar_hl_r")
-                local gi = node:item("crowbar_hl_g")
-                local bi = node:item("crowbar_hl_b")
-                if ri then ri:set_value(0.9) end
-                if gi then gi:set_value(0.3) end
-                if bi then bi:set_value(0.2) end
-            end
-        end)
+        update_live_colors()
+        sync_sliders(r, g, b)
     end
+end
 
-    MenuCallbackHandler.crowbar_hl_preset_pd2 = function(self, item)
-        CrowbarHL_Settings.r = 1.0
-        CrowbarHL_Settings.g = 0.5
-        CrowbarHL_Settings.b = 0.0
-        save_settings()
-        update_preview()
-        pcall(function()
-            local node = MenuHelper:GetMenu(menu_id)
-            if node then
-                local ri = node:item("crowbar_hl_r")
-                local gi = node:item("crowbar_hl_g")
-                local bi = node:item("crowbar_hl_b")
-                if ri then ri:set_value(1.0) end
-                if gi then gi:set_value(0.5) end
-                if bi then bi:set_value(0.0) end
-            end
-        end)
-    end
+MenuCallbackHandler.crowbar_hl_preset_mod = function(self, item)
+    CrowbarHL_Settings.r = 0.9
+    CrowbarHL_Settings.g = 0.3
+    CrowbarHL_Settings.b = 0.2
+    save_settings()
+    update_preview()
+    update_live_colors()
+    sync_sliders(0.9, 0.3, 0.2)
+end
 
-    MenuCallbackHandler.crowbar_hl_focus = function(node, focus)
-        if focus then show_preview() else hide_preview() end
-    end
+MenuCallbackHandler.crowbar_hl_preset_pd2 = function(self, item)
+    CrowbarHL_Settings.r = 1.0
+    CrowbarHL_Settings.g = 0.5
+    CrowbarHL_Settings.b = 0.0
+    save_settings()
+    update_preview()
+    update_live_colors()
+    sync_sliders(1.0, 0.5, 0.0)
+end
 
-    MenuCallbackHandler.crowbar_hl_noop = function(self, item) end
+MenuCallbackHandler.crowbar_hl_focus = function(node, focus)
+    if focus then show_preview() else hide_preview() end
+end
+
+MenuCallbackHandler.crowbar_hl_noop = function(self, item) end
 
 -- MENU SETUP --
 Hooks:Add("MenuManagerSetupCustomMenus", "CrowbarHL_Setup", function(menu_manager, nodes)
@@ -284,6 +315,14 @@ Hooks:Add("MenuManagerSetupCustomMenus", "CrowbarHL_Setup", function(menu_manage
     LocalizationManager:add_localized_strings({
         crowbar_hl_menu_title = "Crowbar Highlight Settings",
         crowbar_hl_menu_desc  = "Configure crowbar highlight behavior and color",
+        crowbar_hl_enabled_title = "Mod Enabled",
+        crowbar_hl_enabled_desc  = "Toggle the crowbar highlight mod on or off. Persists through heist and game restarts. Use the keybind for a temporary in-heist toggle.",
+        crowbar_hl_auto_unhighlight_title = "Smart Unhighlight",
+        crowbar_hl_auto_unhighlight_desc = "Automatically hide highlights when holding a crowbar. When off, all crowbars stay highlighted at all times.",
+        crowbar_hl_proximity_title = "Proximity Mode",
+        crowbar_hl_proximity_desc = "Only highlight crowbars within range. When off, all crowbars are highlighted.",
+        crowbar_hl_range_title = "Proximity Range",
+        crowbar_hl_range_desc = "How close you need to be for crowbars to highlight (100 - 10000 units)",
         crowbar_hl_r_title          = "Red",
         crowbar_hl_r_desc           = "Red channel (0 - 1)",
         crowbar_hl_g_title          = "Green",
@@ -298,8 +337,6 @@ Hooks:Add("MenuManagerSetupCustomMenus", "CrowbarHL_Setup", function(menu_manage
         crowbar_hl_preset_pd2_desc  = "Applies PAYDAY 2's standard contour orange (FF8000)",
         crowbar_hl_black_warning_title = "Note: black (0,0,0) renders as no highlight",
         crowbar_hl_black_warning_desc  = "Setting all color channels to 0 will make the highlight invisible in-game.",
-        crowbar_hl_enabled_title = "Mod Enabled",
-        crowbar_hl_enabled_desc  = "Toggle the crowbar highlight mod on or off. Persists through heist and game restarts. Use the keybind for a temporary in-heist toggle.",
     })
 end)
 
@@ -311,7 +348,43 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "CrowbarHL_Populate", function(menu_
         callback = "crowbar_hl_enabled",
         value = CrowbarHL_Settings.enabled,
         menu_id = menu_id,
-        priority = 11,
+        priority = 20,
+    })
+    MenuHelper:AddToggle({
+        id = "crowbar_hl_auto_unhighlight",
+        title = "crowbar_hl_auto_unhighlight_title",
+        desc = "crowbar_hl_auto_unhighlight_desc",
+        callback = "crowbar_hl_auto_unhighlight",
+        value = CrowbarHL_Settings.auto_unhighlight,
+        menu_id = menu_id,
+        priority = 19,
+    })
+    MenuHelper:AddToggle({
+        id = "crowbar_hl_proximity",
+        title = "crowbar_hl_proximity_title",
+        desc = "crowbar_hl_proximity_desc",
+        callback = "crowbar_hl_proximity",
+        value = CrowbarHL_Settings.proximity,
+        menu_id = menu_id,
+        priority = 18,
+    })
+    MenuHelper:AddSlider({
+        id = "crowbar_hl_range",
+        title = "crowbar_hl_range_title",
+        desc = "crowbar_hl_range_desc",
+        callback = "crowbar_hl_range",
+        value = CrowbarHL_Settings.proximity_range,
+        min = 100, max = 10000, step = 100,
+        show_value = true,
+        display_precision = 0,
+        menu_id = menu_id,
+        priority = 17,
+    })
+    MenuHelper:AddDivider({
+        id = "crowbar_hl_div_sections",
+        size = 16,
+        menu_id = menu_id,
+        priority = 16,
     })
     MenuHelper:AddSlider({
         id = "crowbar_hl_r",
@@ -323,7 +396,7 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "CrowbarHL_Populate", function(menu_
         show_value = true,
         display_precision = 2,
         menu_id = menu_id,
-        priority = 10,
+        priority = 15,
     })
     MenuHelper:AddSlider({
         id = "crowbar_hl_g",
@@ -335,7 +408,7 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "CrowbarHL_Populate", function(menu_
         show_value = true,
         display_precision = 2,
         menu_id = menu_id,
-        priority = 9,
+        priority = 14,
     })
     MenuHelper:AddSlider({
         id = "crowbar_hl_b",
@@ -347,7 +420,7 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "CrowbarHL_Populate", function(menu_
         show_value = true,
         display_precision = 2,
         menu_id = menu_id,
-        priority = 8,
+        priority = 13,
     })
     MenuHelper:AddButton({
         id = "crowbar_hl_black_warning",
@@ -355,13 +428,13 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "CrowbarHL_Populate", function(menu_
         desc = "crowbar_hl_black_warning_desc",
         callback = "crowbar_hl_noop",
         menu_id = menu_id,
-        priority = 7,
+        priority = 12,
     })
     MenuHelper:AddDivider({
         id = "crowbar_hl_div",
         size = 16,
         menu_id = menu_id,
-        priority = 6,
+        priority = 11,
     })
     MenuHelper:AddInput({
         id = "crowbar_hl_hex",
@@ -370,7 +443,7 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "CrowbarHL_Populate", function(menu_
         callback = "crowbar_hl_hex",
         value = "",
         menu_id = menu_id,
-        priority = 5,
+        priority = 10,
     })
     MenuHelper:AddButton({
         id = "crowbar_hl_preset_mod",
@@ -378,7 +451,7 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "CrowbarHL_Populate", function(menu_
         desc = "crowbar_hl_preset_mod_desc",
         callback = "crowbar_hl_preset_mod",
         menu_id = menu_id,
-        priority = 4,
+        priority = 9,
     })
     MenuHelper:AddButton({
         id = "crowbar_hl_preset_pd2",
@@ -386,7 +459,7 @@ Hooks:Add("MenuManagerPopulateCustomMenus", "CrowbarHL_Populate", function(menu_
         desc = "crowbar_hl_preset_pd2_desc",
         callback = "crowbar_hl_preset_pd2",
         menu_id = menu_id,
-        priority = 3,
+        priority = 8,
     })
 end)
 

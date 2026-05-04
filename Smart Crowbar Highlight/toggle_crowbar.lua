@@ -1,9 +1,16 @@
+if not CrowbarHL_Settings or not CrowbarHL_Settings.enabled then return end
+
 CrowbarHighlight_Enabled = not CrowbarHighlight_Enabled
 if CrowbarHighlight_Enabled then
-    if managers.player and not managers.player:has_special_equipment("crowbar") then
+    if CrowbarHL_Settings.auto_unhighlight
+        and managers.player and managers.player:has_special_equipment("crowbar") then
+        -- don't highlight, player is holding a crowbar
+    else
         for _, keeper in ipairs(CrowbarHighlight_Keepers or {}) do
-            keeper.running = true
-            keeper:run()
+            if keeper.ext and keeper.ext._active then
+                keeper.running = true
+                keeper:run()
+            end
         end
     end
 else

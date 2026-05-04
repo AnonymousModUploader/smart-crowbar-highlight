@@ -2,7 +2,17 @@ CrowbarHighlight_Enabled = true
 
 CrowbarHighlight_Units   = CrowbarHighlight_Units   or {}
 CrowbarHighlight_Keepers = CrowbarHighlight_Keepers or {}
-_G.CrowbarHL_Settings = _G.CrowbarHL_Settings or { r = 0.9, g = 0.3, b = 0.2, enabled = true }
+_G.CrowbarHL_Settings = _G.CrowbarHL_Settings or {
+    r = 0.9, g = 0.3, b = 0.2,
+    enabled = true,
+    proximity = false,
+    proximity_range = 1500,
+    auto_unhighlight = true,
+}
+
+local function is_enabled()
+    return CrowbarHighlight_Enabled and CrowbarHL_Settings.enabled
+end
 
 local function highlight(unit)
     local color = Vector3(CrowbarHL_Settings.r, CrowbarHL_Settings.g, CrowbarHL_Settings.b)
@@ -26,12 +36,19 @@ function CrowbarHL_Unhighlight(unit)
     if mat2 then mat2:set_variable(Idstring("contour_opacity"), 0) end
 end
 
+local function unhighlight_silent(unit)
+    local mat = unit:material(Idstring("mtr_crowbar"))
+    if mat then mat:set_variable(Idstring("contour_opacity"), 0) end
+    local mat2 = unit:material(Idstring("mat_contour"))
+    if mat2 then mat2:set_variable(Idstring("contour_opacity"), 0) end
+end
+
 function CrowbarHL_SetHighlights(visible)
     for _, keeper in ipairs(CrowbarHighlight_Keepers) do
-        keeper.running = visible and CrowbarHighlight_Enabled and CrowbarHL_Settings.enabled
-        if visible and CrowbarHighlight_Enabled and CrowbarHL_Settings.enabled then keeper:run() end
+        keeper.running = visible and is_enabled()
+        if visible and is_enabled() then keeper:run() end
     end
-    if not visible or not CrowbarHighlight_Enabled or not CrowbarHL_Settings.enabled then
+    if not visible or not is_enabled() then
         for _, unit in ipairs(CrowbarHighlight_Units) do
             if alive(unit) then CrowbarHL_Unhighlight(unit) end
         end
@@ -41,7 +58,22 @@ end
 local function start_keep_alive(unit, ext)
     local keeper = { unit = unit, running = false, ext = ext, original_active = ext and ext._active or true }
     function keeper:run()
-        if alive(self.unit) and self.running and CrowbarHighlight_Enabled and CrowbarHL_Settings.enabled then
+        if alive(self.unit) and self.running and is_enabled() then
+            if CrowbarHL_Settings.proximity then
+                local player = managers.player:player_unit()
+                if alive(player) then
+                    local dist = mvector3.distance(player:position(), self.unit:position())
+                    if dist > CrowbarHL_Settings.proximity_range then
+                        unhighlight_silent(self.unit)
+                        managers.enemy:add_delayed_clbk(
+                            "CrowbarHL_keep_" .. tostring(self.unit:key()),
+                            callback(self, self, "run"),
+                            TimerManager:game():time() + 0.1
+                        )
+                        return
+                    end
+                end
+            end
             highlight(self.unit)
             if managers.occlusion then
                 managers.occlusion:remove_occlusion(self.unit)
@@ -49,7 +81,7 @@ local function start_keep_alive(unit, ext)
             managers.enemy:add_delayed_clbk(
                 "CrowbarHL_keep_" .. tostring(self.unit:key()),
                 callback(self, self, "run"),
-                TimerManager:game():time() + 1
+                TimerManager:game():time() + (CrowbarHL_Settings.proximity and 0.1 or 1)
             )
         end
     end
@@ -65,7 +97,7 @@ local function start_possession_check()
     local checker = { running = true }
     function checker:run()
         if not self.running then return end
-        if not CrowbarHighlight_Enabled or not CrowbarHL_Settings.enabled then
+        if not is_enabled() then
             managers.enemy:add_delayed_clbk(
                 "CrowbarHL_possession_check",
                 callback(self, self, "run"),
@@ -74,7 +106,7 @@ local function start_possession_check()
             return
         end
         local has_crowbar = managers.player:has_special_equipment("crowbar")
-        if has_crowbar then
+        if CrowbarHL_Settings.auto_unhighlight and has_crowbar then
             for _, keeper in ipairs(CrowbarHighlight_Keepers) do
                 if keeper.running then
                     CrowbarHL_SetHighlights(false)
@@ -83,7 +115,6 @@ local function start_possession_check()
             end
         else
             for _, keeper in ipairs(CrowbarHighlight_Keepers) do
-                -- only restart if the crowbar is actually active
                 if not keeper.running and keeper.ext and keeper.ext._active then
                     keeper.running = true
                     keeper:run()
@@ -114,8 +145,9 @@ if RequiredScript == "lib/units/interactions/interactionext" then
             if active then
                 for _, keeper in ipairs(CrowbarHighlight_Keepers) do
                     if keeper.unit == self._unit then
-                        if CrowbarHL_Settings.enabled and CrowbarHighlight_Enabled then
-                            if managers.player:has_special_equipment("crowbar") then
+                        if is_enabled() then
+                            if CrowbarHL_Settings.auto_unhighlight
+                                and managers.player:has_special_equipment("crowbar") then
                                 keeper.running = false
                                 CrowbarHL_Unhighlight(self._unit)
                                 return
@@ -156,21 +188,14 @@ if RequiredScript == "lib/units/interactions/interactionext" then
                 "CrowbarHL_init_" .. tostring(unit:key()),
                 function()
                     if not alive(unit) then return end
-                    local lvl = Global.game_settings and Global.game_settings.level_id or "?"
-                    local has = managers.player:has_special_equipment("crowbar")
-                    log("[CrowbarHL] [" .. lvl .. "] Init callback"
-                        .. " | active=" .. tostring(ext._active)
-                        .. " | has_crowbar=" .. tostring(has)
-                        .. " | pos=" .. tostring(unit:position())
-                        .. " | key=" .. tostring(unit:key())
-                        .. " | unit=" .. tostring(unit:name()))
-                    if ext._active and CrowbarHL_Settings.enabled and CrowbarHighlight_Enabled then
+                    if ext._active and is_enabled() then
                         local lvl = Global.game_settings and Global.game_settings.level_id or "?"
                         if lvl == "mex" then
                             keeper.running = false
                             return
                         end
-                        if has then
+                        if CrowbarHL_Settings.auto_unhighlight
+                            and managers.player:has_special_equipment("crowbar") then
                             keeper.running = false
                             CrowbarHL_Unhighlight(unit)
                             return
@@ -194,7 +219,7 @@ if RequiredScript == "lib/units/interactions/interactionext" then
     function BaseInteractionExt:interact(player)
         local is_crowbar = self._tweak_data and self._tweak_data.special_equipment_block == "crowbar"
         old_interact(self, player)
-        if is_crowbar then
+        if is_crowbar and CrowbarHL_Settings.auto_unhighlight then
             CrowbarHL_SetHighlights(false)
         end
     end
@@ -206,7 +231,8 @@ if RequiredScript == "lib/managers/playermanager" then
     local old_remove_special = PlayerManager.remove_special
     function PlayerManager:remove_special(name, ...)
         old_remove_special(self, name, ...)
-        if name == "crowbar" and not self:has_special_equipment("crowbar") then
+        if name == "crowbar" and CrowbarHL_Settings.auto_unhighlight
+            and not self:has_special_equipment("crowbar") then
             CrowbarHL_SetHighlights(true)
         end
     end
@@ -215,7 +241,7 @@ if RequiredScript == "lib/managers/playermanager" then
     function PlayerManager:add_special(data, ...)
         old_add_special(self, data, ...)
         local name = type(data) == "table" and data.name or data
-        if name == "crowbar" then
+        if name == "crowbar" and CrowbarHL_Settings.auto_unhighlight then
             CrowbarHL_SetHighlights(false)
         end
     end
