@@ -4,7 +4,7 @@ A quality-of-life mod for **PAYDAY 2** that outlines every crowbar on the map in
 
 ## Download & Install
 
-1. **[Download the latest release](../../releases/latest)** (or use the green *Code → Download ZIP* button).
+1. **[Download the latest release](../../releases/download/master/Smart.Crowbar.Highlight.zip)** (or use the green *Code → Download ZIP* button).
 2. Extract the **`Smart Crowbar Highlight`** folder into your `PAYDAY 2/mods/` directory.
 3. That's it — the mod appears under *Options → Mod Options → Smart Crowbar Highlight*.
 
